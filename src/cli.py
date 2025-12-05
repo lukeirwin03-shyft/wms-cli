@@ -259,15 +259,13 @@ def map(query, output, display, width, height, bbox, crs, img_format, style, deb
             except Exception as e:
                 click.echo(f"Warning: Could not display image: {e}", err=True)
 
-        # Generate filename if not specified
-        if not output:
-            parts = [resolved.layer.name, use_style]
-            for dim_name, value in resolved.dimensions.items():
-                parts.append(sanitize_filename(value))
-            output = '_'.join(parts[:4]) + '.png'
-
-        # Save to file
-        if output:
+        # Save to file only if -o is specified, or if not displaying
+        if output or not display:
+            if not output:
+                parts = [resolved.layer.name, use_style]
+                for dim_name, value in resolved.dimensions.items():
+                    parts.append(sanitize_filename(value))
+                output = '_'.join(parts[:4]) + '.png'
             with open(output, 'wb') as f:
                 f.write(image_data)
             size_kb = len(image_data) / 1024
@@ -384,15 +382,14 @@ def tile(query, output, display, zoom, debug):
             except Exception as e:
                 click.echo(f"Warning: Could not display image: {e}", err=True)
 
-        # Generate filename if not specified
-        if not output:
-            output = f"tile_{resolved.layer.name}_z{zoom}.png"
-
-        # Save to file
-        with open(output, 'wb') as f:
-            f.write(image_data)
-        size_kb = len(image_data) / 1024
-        click.echo(f"\n✓ Saved: {output} ({size_kb:.1f} KB)")
+        # Save to file only if -o is specified, or if not displaying
+        if output or not display:
+            if not output:
+                output = f"tile_{resolved.layer.name}_z{zoom}.png"
+            with open(output, 'wb') as f:
+                f.write(image_data)
+            size_kb = len(image_data) / 1024
+            click.echo(f"\n✓ Saved: {output} ({size_kb:.1f} KB)")
 
     except AmbiguousQueryError as e:
         click.echo(f"Error: {e}", err=True)
@@ -476,15 +473,14 @@ def legend(query, output, display, debug):
             except Exception as e:
                 click.echo(f"Warning: Could not display image: {e}", err=True)
 
-        # Generate filename if not specified
-        if not output:
-            output = f"legend_{resolved.layer.name}.png"
-
-        # Save to file
-        with open(output, 'wb') as f:
-            f.write(image_data)
-        size_kb = len(image_data) / 1024
-        click.echo(f"\n✓ Saved: {output} ({size_kb:.1f} KB)")
+        # Save to file only if -o is specified, or if not displaying
+        if output or not display:
+            if not output:
+                output = f"legend_{resolved.layer.name}.png"
+            with open(output, 'wb') as f:
+                f.write(image_data)
+            size_kb = len(image_data) / 1024
+            click.echo(f"\n✓ Saved: {output} ({size_kb:.1f} KB)")
 
     except AmbiguousQueryError as e:
         click.echo(f"Error: {e}", err=True)

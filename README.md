@@ -108,16 +108,12 @@ Instead of ISO8601 strings, use shortcuts:
 Use the `--display` or `-D` flag to render images directly in your terminal:
 
 ```bash
-wms map gfs temp -D                   # Display in terminal
+wms map gfs temp -D                   # Display only (no file saved)
 wms map gfs temp -D -o output.png     # Display AND save
-wms tile galwem cloud --display       # Display tile
-wms legend hrrr precip -D             # Display legend
+wms map gfs temp                      # Save only (default behavior)
 ```
 
-Images are rendered using Unicode half-block characters (`▀`) with 24-bit color:
-- **Foreground color** = top pixel
-- **Background color** = bottom pixel
-- Works in any terminal that supports 24-bit color (most modern terminals)
+Images are rendered using Unicode half-block characters (`▀`) with 24-bit color.
 
 ## Configuration
 

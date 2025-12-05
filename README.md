@@ -8,6 +8,7 @@ A command-line tool for making WMS (Web Map Service) requests with fuzzy search 
 - **Natural dimensions** - Use `6h`, `12z`, `850mb` instead of ISO8601
 - **Smart defaults** - Automatically uses latest RUN, default FORECAST
 - **Shell completion** - Tab completion for commands, options, and layer names
+- **Terminal image display** - View images directly in terminal with `--display` flag
 - **Cache management** - 10-minute sliding TTL cache for capabilities
 - **Batch downloads** - Download multiple layers matching a pattern
 - **Performance testing** - Hammer WMS servers with concurrent requests
@@ -102,10 +103,21 @@ Instead of ISO8601 strings, use shortcuts:
 | `850`, `500mb` | ELEVATION | Pressure level |
 | `f`, `c`, `k` | Unit | Temperature unit preference |
 
-## Documentation
+## Display Images in Terminal
 
-- [Usage Guide](docs/USAGE.md) - Comprehensive usage guide with examples
-- [Command Reference](docs/COMMAND_SYNTAX.md) - Full command syntax and options
+Use the `--display` or `-D` flag to render images directly in your terminal:
+
+```bash
+wms map gfs temp -D                   # Display in terminal
+wms map gfs temp -D -o output.png     # Display AND save
+wms tile galwem cloud --display       # Display tile
+wms legend hrrr precip -D             # Display legend
+```
+
+Images are rendered using Unicode half-block characters (`▀`) with 24-bit color:
+- **Foreground color** = top pixel
+- **Background color** = bottom pixel
+- Works in any terminal that supports 24-bit color (most modern terminals)
 
 ## Configuration
 

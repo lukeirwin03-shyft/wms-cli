@@ -22,6 +22,7 @@ from .wms_client import WMSClient
 from .smart_resolver import SmartQueryResolver, AmbiguousQueryError
 from .fuzzy import FuzzySearchEngine
 from .completions import complete_layer_names, complete_group_names
+from .image_display import display_image
 
 
 def get_resolver():
@@ -154,6 +155,7 @@ def build_url(base_url: str, params: dict) -> str:
 @cli.command()
 @click.argument('query', nargs=-1, required=True, shell_complete=complete_layer_names)
 @click.option('--output', '-o', help='Output filename')
+@click.option('--display', '-D', is_flag=True, help='Display image in terminal using Unicode')
 @click.option('--width', '-w', default=800, help='Image width')
 @click.option('--height', '-h', default=600, help='Image height')
 @click.option('--bbox', help='Bounding box: minx,miny,maxx,maxy')
@@ -161,7 +163,7 @@ def build_url(base_url: str, params: dict) -> str:
 @click.option('--format', 'img_format', default='image/png', help='Image format')
 @click.option('--style', help='Style name (default: layer default)')
 @click.option('--debug', '-d', is_flag=True, help='Show resolved URL without fetching')
-def map(query, output, width, height, bbox, crs, img_format, style, debug):
+def map(query, output, display, width, height, bbox, crs, img_format, style, debug):
     """Fetch a map image (GetMap).
 
     QUERY is fuzzy-matched to find the best layer.
@@ -243,7 +245,21 @@ def map(query, output, width, height, bbox, crs, img_format, style, debug):
             **dim_kwargs
         )
 
-        # Generate filename
+        # Display in terminal if --display flag is used
+        if display:
+            click.echo("\nDisplaying image:")
+            try:
+                import tempfile
+                import os
+                with tempfile.NamedTemporaryFile(mode='wb', suffix='.png', delete=False) as tmp:
+                    tmp.write(image_data)
+                    tmp_path = tmp.name
+                display_image(tmp_path)
+                os.unlink(tmp_path)
+            except Exception as e:
+                click.echo(f"Warning: Could not display image: {e}", err=True)
+
+        # Generate filename if not specified
         if not output:
             parts = [resolved.layer.name, use_style]
             for dim_name, value in resolved.dimensions.items():
@@ -251,11 +267,11 @@ def map(query, output, width, height, bbox, crs, img_format, style, debug):
             output = '_'.join(parts[:4]) + '.png'
 
         # Save to file
-        with open(output, 'wb') as f:
-            f.write(image_data)
-
-        size_kb = len(image_data) / 1024
-        click.echo(f"✓ Saved: {output} ({size_kb:.1f} KB)")
+        if output:
+            with open(output, 'wb') as f:
+                f.write(image_data)
+            size_kb = len(image_data) / 1024
+            click.echo(f"\n✓ Saved: {output} ({size_kb:.1f} KB)")
 
     except AmbiguousQueryError as e:
         click.echo(f"Error: {e}", err=True)
@@ -275,9 +291,10 @@ def map(query, output, width, height, bbox, crs, img_format, style, debug):
 @cli.command()
 @click.argument('query', nargs=-1, required=True, shell_complete=complete_layer_names)
 @click.option('--output', '-o', help='Output filename')
+@click.option('--display', '-D', is_flag=True, help='Display image in terminal using Unicode')
 @click.option('--zoom', '-z', default=3, help='Tile zoom level')
 @click.option('--debug', '-d', is_flag=True, help='Show resolved URL without fetching')
-def tile(query, output, zoom, debug):
+def tile(query, output, display, zoom, debug):
     """Fetch a random tile (GetGTile).
 
     QUERY is fuzzy-matched to find the best layer.
@@ -353,16 +370,29 @@ def tile(query, output, zoom, debug):
             **dim_kwargs
         )
 
-        # Generate filename
+        # Display in terminal if --display flag is used
+        if display:
+            click.echo("\nDisplaying image:")
+            try:
+                import tempfile
+                import os
+                with tempfile.NamedTemporaryFile(mode='wb', suffix='.png', delete=False) as tmp:
+                    tmp.write(image_data)
+                    tmp_path = tmp.name
+                display_image(tmp_path)
+                os.unlink(tmp_path)
+            except Exception as e:
+                click.echo(f"Warning: Could not display image: {e}", err=True)
+
+        # Generate filename if not specified
         if not output:
-            output = f"{resolved.layer.name}_z{zoom}_r{tilerow}_c{tilecol}.png"
+            output = f"tile_{resolved.layer.name}_z{zoom}.png"
 
         # Save to file
         with open(output, 'wb') as f:
             f.write(image_data)
-
         size_kb = len(image_data) / 1024
-        click.echo(f"✓ Saved: {output} ({size_kb:.1f} KB)")
+        click.echo(f"\n✓ Saved: {output} ({size_kb:.1f} KB)")
 
     except AmbiguousQueryError as e:
         click.echo(f"Error: {e}", err=True)
@@ -382,8 +412,9 @@ def tile(query, output, zoom, debug):
 @cli.command()
 @click.argument('query', nargs=-1, required=True, shell_complete=complete_layer_names)
 @click.option('--output', '-o', help='Output filename')
+@click.option('--display', '-D', is_flag=True, help='Display image in terminal using Unicode')
 @click.option('--debug', '-d', is_flag=True, help='Show resolved URL without fetching')
-def legend(query, output, debug):
+def legend(query, output, display, debug):
     """Fetch legend graphic for a layer.
 
     Examples:
@@ -431,16 +462,29 @@ def legend(query, output, debug):
             style=resolved.style
         )
 
-        # Generate filename
+        # Display in terminal if --display flag is used
+        if display:
+            click.echo("\nDisplaying image:")
+            try:
+                import tempfile
+                import os
+                with tempfile.NamedTemporaryFile(mode='wb', suffix='.png', delete=False) as tmp:
+                    tmp.write(image_data)
+                    tmp_path = tmp.name
+                display_image(tmp_path)
+                os.unlink(tmp_path)
+            except Exception as e:
+                click.echo(f"Warning: Could not display image: {e}", err=True)
+
+        # Generate filename if not specified
         if not output:
-            output = f"{resolved.layer.name}_legend.png"
+            output = f"legend_{resolved.layer.name}.png"
 
         # Save to file
         with open(output, 'wb') as f:
             f.write(image_data)
-
         size_kb = len(image_data) / 1024
-        click.echo(f"✓ Saved: {output} ({size_kb:.1f} KB)")
+        click.echo(f"\n✓ Saved: {output} ({size_kb:.1f} KB)")
 
     except AmbiguousQueryError as e:
         click.echo(f"Error: {e}", err=True)

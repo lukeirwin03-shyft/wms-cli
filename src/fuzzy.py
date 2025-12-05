@@ -121,11 +121,37 @@ class FuzzySearchEngine:
         Tokenize user query more aggressively.
 
         Handles cases like "tempf" → ["temp", "f"] and "tempc" → ["temp", "c"]
-        """
-        # First do standard tokenization
-        tokens = self._tokenize(text)
 
-        # Additional splitting for common patterns
+        IMPORTANT: This method preserves dimension tokens (12z, 6h, 850mb, etc.)
+        by extracting them BEFORE tokenization. This prevents pollution of fuzzy matching.
+        """
+        # Extract dimension patterns BEFORE tokenization
+        dimension_tokens = []
+        clean_text = text
+
+        # Patterns that should NOT be tokenized
+        # RUN patterns: 6z, 12z, 00z, 18z, latest
+        run_pattern = r'\b(\d{1,2}z|latest)\b'
+        for match in re.finditer(run_pattern, clean_text, re.IGNORECASE):
+            dimension_tokens.append(match.group(1).lower())
+            clean_text = clean_text[:match.start()] + ' ' + clean_text[match.end():]
+
+        # FORECAST patterns: 6h, +12h, PT6H, 2d, P2D
+        forecast_pattern = r'\b(\+?\d+[hd]|PT\d+H|P\d+D)\b'
+        for match in re.finditer(forecast_pattern, clean_text, re.IGNORECASE):
+            dimension_tokens.append(match.group(1).lower())
+            clean_text = clean_text[:match.start()] + ' ' + clean_text[match.end():]
+
+        # ELEVATION patterns: 850, 500mb, 10000
+        elevation_pattern = r'\b(\d{3,5}(?:mb|hpa)?)\b'
+        for match in re.finditer(elevation_pattern, clean_text, re.IGNORECASE):
+            dimension_tokens.append(match.group(1).lower())
+            clean_text = clean_text[:match.start()] + ' ' + clean_text[match.end():]
+
+        # Now do standard tokenization on the clean text
+        tokens = self._tokenize(clean_text)
+
+        # Additional splitting for common patterns (unit indicators)
         expanded = []
         for token in tokens:
             # Split trailing single letters that might be unit indicators
@@ -137,6 +163,8 @@ class FuzzySearchEngine:
             else:
                 expanded.append(token)
 
+        # NOTE: We return only the clean tokens here, not dimension tokens
+        # Dimension tokens are extracted separately by SmartQueryResolver
         return expanded
 
     def _extract_model(self, name: str) -> Optional[str]:

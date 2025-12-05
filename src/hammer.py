@@ -4,11 +4,11 @@ WMS Hammer - Automated WMS Request Tool
 
 A modern, clean automation script for batch WMS requests.
 Uses the wms_parser and wms_client modules for robust operation.
-"""
 
-import sys
-import os
-sys.path.insert(0, os.path.dirname(__file__))
+Usage:
+    As module: from src.hammer import WMSHammer
+    Standalone: python -m src.hammer <url>
+"""
 
 import argparse
 import logging
@@ -19,8 +19,8 @@ import fnmatch
 from itertools import product
 import time
 
-from wms_client import WMSClient
-from wms_parser import WMSCapabilities, Layer
+from .wms_client import WMSClient
+from .wms_parser import WMSCapabilities, Layer
 
 # Setup logging
 logging.basicConfig(
@@ -34,19 +34,26 @@ logger = logging.getLogger(__name__)
 class WMSHammer:
     """Automated WMS request tool"""
 
-    def __init__(self, args):
+    def __init__(self, args, capabilities: Optional[WMSCapabilities] = None):
+        """
+        Initialize WMS Hammer.
+
+        Args:
+            args: Parsed command-line arguments
+            capabilities: Optional pre-loaded capabilities (avoids duplicate fetch)
+        """
         self.base_url = args.url
         self.output_dir = Path(args.output)
-        self.glob_pattern = args.glob
+        self.glob_pattern = getattr(args, 'glob', '*')
         self.max_workers = args.workers
         self.dry_run = args.dry_run
-        self.tile_mode = args.tile_mode
-        self.width = args.width
-        self.height = args.height
-        self.max_timesteps = args.max_timesteps
-        self.latest_run_only = args.latest_run_only
-        self.save_images = not args.no_save
-        self.verbose = args.verbose
+        self.tile_mode = getattr(args, 'tile_mode', False)
+        self.width = getattr(args, 'width', 800)
+        self.height = getattr(args, 'height', 600)
+        self.max_timesteps = getattr(args, 'max_timesteps', 10)
+        self.latest_run_only = getattr(args, 'latest_run_only', False)
+        self.save_images = not getattr(args, 'no_save', False)
+        self.verbose = getattr(args, 'verbose', False)
 
         # Tile hammering options
         self.random_tiles = getattr(args, 'random_tiles', None)
@@ -56,6 +63,10 @@ class WMSHammer:
         # Layer-specific targeting
         self.specific_layer = getattr(args, 'layer', None)
         self.list_layers = getattr(args, 'list_layers', False)
+
+        # Pre-loaded capabilities (optional)
+        self._capabilities = capabilities
+        self.layers: List[Layer] = []
 
         # Statistics
         self.total_requests = 0
@@ -73,11 +84,23 @@ class WMSHammer:
         logger.info(f"🔨 WMS Hammer starting...")
         logger.info(f"   URL: {self.base_url}")
 
-        # Fetch and parse capabilities
-        logger.info(f"\n📡 Fetching GetCapabilities...")
-        try:
-            with WMSClient(self.base_url) as client:
-                caps = client.get_capabilities()
+        # Use pre-loaded layers if available (set by caller)
+        if self.layers:
+            filtered_layers = self.layers
+            logger.info(f"✓ Using {len(filtered_layers)} pre-loaded layers")
+        else:
+            # Fetch and parse capabilities
+            if self._capabilities:
+                caps = self._capabilities
+                logger.info(f"✓ Using pre-loaded capabilities")
+            else:
+                logger.info(f"\n📡 Fetching GetCapabilities...")
+                try:
+                    with WMSClient(self.base_url) as client:
+                        caps = client.get_capabilities()
+                except Exception as e:
+                    logger.error(f"❌ Failed to fetch capabilities: {e}")
+                    return 1
 
             logger.info(f"✓ Service: {caps.service_title}")
             logger.info(f"✓ Version: {caps.version}")
@@ -85,28 +108,24 @@ class WMSHammer:
             queryable = caps.get_queryable_layers()
             logger.info(f"✓ Total queryable layers: {len(queryable)}")
 
-        except Exception as e:
-            logger.error(f"❌ Failed to fetch capabilities: {e}")
-            return 1
+            # Handle --list-layers mode
+            if self.list_layers:
+                self._list_layers(queryable)
+                return 0
 
-        # Handle --list-layers mode
-        if self.list_layers:
-            self._list_layers(queryable)
-            return 0
-
-        # Handle specific layer targeting
-        if self.specific_layer:
-            layer = next((l for l in queryable if l.name == self.specific_layer), None)
-            if not layer:
-                logger.error(f"❌ Layer '{self.specific_layer}' not found")
-                logger.info(f"Use --list-layers to see available layers")
-                return 1
-            filtered_layers = [layer]
-            logger.info(f"✓ Targeting specific layer: {layer.name}")
-        else:
-            # Filter layers by glob pattern
-            filtered_layers = self._filter_layers(queryable)
-            logger.info(f"✓ Layers matching '{self.glob_pattern}': {len(filtered_layers)}")
+            # Handle specific layer targeting
+            if self.specific_layer:
+                layer = next((l for l in queryable if l.name == self.specific_layer), None)
+                if not layer:
+                    logger.error(f"❌ Layer '{self.specific_layer}' not found")
+                    logger.info(f"Use --list-layers to see available layers")
+                    return 1
+                filtered_layers = [layer]
+                logger.info(f"✓ Targeting specific layer: {layer.name}")
+            else:
+                # Filter layers by glob pattern
+                filtered_layers = self._filter_layers(queryable)
+                logger.info(f"✓ Layers matching '{self.glob_pattern}': {len(filtered_layers)}")
 
         if not filtered_layers:
             logger.warning("No layers match the pattern!")

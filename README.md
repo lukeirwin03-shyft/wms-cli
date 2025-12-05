@@ -9,6 +9,7 @@ A command-line tool for making WMS (Web Map Service) requests with fuzzy search.
 - **Debug mode** - Preview resolved URLs without fetching
 - **Multiple request types** - GetMap, GetGTile, GetLegendGraphic
 - **Batch automation** - Hammer layers with all dimension combinations
+- **Terminal image display** - View images directly in the terminal (supports Kitty, iTerm2, Sixel, and ASCII fallback)
 
 ## Installation
 
@@ -71,7 +72,7 @@ List available layers, optionally filtered by fuzzy search.
 ```
 
 ### `wms map <query>`
-Fetch a GetMap image.
+Fetch and display a GetMap image in the terminal.
 
 ```bash
 ./wms map gfs temp                    # Basic query
@@ -79,24 +80,26 @@ Fetch a GetMap image.
 ./wms map hrrr precip +6h             # With forecast time
 ./wms map gfs wind contour            # With style hint
 ./wms map gfs temp --debug            # Show URL only
-./wms map gfs temp -o output.png      # Custom filename
+./wms map gfs temp -o output.png      # Show png and save
 ```
 
 ### `wms tile <query>`
-Fetch a random GetGTile.
+Fetch and display a random GetGTile in the terminal.
 
 ```bash
 ./wms tile galwem cloud
 ./wms tile gfs temp --zoom 5
 ./wms tile hrrr --debug
+./wms tile gfs temp -o tile.png       # Save to file AND display
 ```
 
 ### `wms legend <query>`
-Fetch a GetLegendGraphic.
+Fetch and display a GetLegendGraphic in the terminal.
 
 ```bash
 ./wms legend gfs temp
 ./wms legend galwem wind --debug
+./wms legend gfs temp -o legend.png   # Save to file AND display
 ```
 
 ### `wms hammer <query>`
@@ -145,6 +148,23 @@ wms-cli/
     ├── CLAUDE.md          # Development notes
     └── HAMMER_USAGE.md    # Hammer documentation
 ```
+
+## Terminal Image Display
+
+The CLI displays PNG images directly in your terminal by default using Unicode half-block characters with dual colors for 2x vertical resolution:
+
+```bash
+./wms map gfs temp                    # Displays image without saving
+./wms tile galwem cloud               # Displays image without saving
+./wms legend hrrr precip              # Displays image without saving
+./wms map gfs temp -o file.png        # Saves AND displays
+```
+
+Images are rendered using the `▀` character with:
+- **Foreground color** = top pixel
+- **Background color** = bottom pixel
+- **Full RGB color** support using ANSI 24-bit color codes
+- Works in any terminal that supports 24-bit color
 
 ## Configuration
 

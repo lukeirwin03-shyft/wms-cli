@@ -16,6 +16,7 @@ from .wms_parser import parse_capabilities
 from .wms_client import WMSClient
 from .resolver import QueryResolver
 from .fuzzy import FuzzySearchEngine
+from .image_display import display_image
 
 
 def get_resolver():
@@ -140,7 +141,7 @@ def build_url(base_url: str, params: dict) -> str:
 
 @cli.command()
 @click.argument('query', nargs=-1, required=True)
-@click.option('--output', '-o', help='Output filename')
+@click.option('--output', '-o', help='Output filename (if not specified, only displays without saving)')
 @click.option('--width', '-w', default=800, help='Image width')
 @click.option('--height', '-h', default=600, help='Image height')
 @click.option('--debug', '-d', is_flag=True, help='Show resolved URL without fetching')
@@ -215,19 +216,26 @@ def map(query, output, width, height, debug):
             **dim_kwargs
         )
 
-        # Generate filename
-        if not output:
-            parts = [resolved.layer.name, resolved.style]
-            for dim_name, value in resolved.dimensions.items():
-                parts.append(sanitize_filename(value))
-            output = '_'.join(parts[:4]) + '.png'
+        # Display in terminal by default
+        click.echo("\nDisplaying image:")
+        try:
+            import tempfile
+            import os
+            # Save to temp file for display
+            with tempfile.NamedTemporaryFile(mode='wb', suffix='.png', delete=False) as tmp:
+                tmp.write(image_data)
+                tmp_path = tmp.name
+            display_image(tmp_path)
+            os.unlink(tmp_path)
+        except Exception as e:
+            click.echo(f"Warning: Could not display image: {e}", err=True)
 
-        # Save to file
-        with open(output, 'wb') as f:
-            f.write(image_data)
-
-        size_kb = len(image_data) / 1024
-        click.echo(f"✓ Saved: {output} ({size_kb:.1f} KB)")
+        # Save to file only if output is specified
+        if output:
+            with open(output, 'wb') as f:
+                f.write(image_data)
+            size_kb = len(image_data) / 1024
+            click.echo(f"\n✓ Saved: {output} ({size_kb:.1f} KB)")
 
     except ValueError as e:
         click.echo(f"Error: {e}", err=True)
@@ -239,7 +247,7 @@ def map(query, output, width, height, debug):
 
 @cli.command()
 @click.argument('query', nargs=-1, required=True)
-@click.option('--output', '-o', help='Output filename')
+@click.option('--output', '-o', help='Output filename (if not specified, only displays without saving)')
 @click.option('--zoom', '-z', default=3, help='Tile zoom level')
 @click.option('--debug', '-d', is_flag=True, help='Show resolved URL without fetching')
 def tile(query, output, zoom, debug):
@@ -312,16 +320,26 @@ def tile(query, output, zoom, debug):
             **dim_kwargs
         )
 
-        # Generate filename
-        if not output:
-            output = f"{resolved.layer.name}_z{zoom}_r{tilerow}_c{tilecol}.png"
+        # Display in terminal by default
+        click.echo("\nDisplaying image:")
+        try:
+            import tempfile
+            import os
+            # Save to temp file for display
+            with tempfile.NamedTemporaryFile(mode='wb', suffix='.png', delete=False) as tmp:
+                tmp.write(image_data)
+                tmp_path = tmp.name
+            display_image(tmp_path)
+            os.unlink(tmp_path)
+        except Exception as e:
+            click.echo(f"Warning: Could not display image: {e}", err=True)
 
-        # Save to file
-        with open(output, 'wb') as f:
-            f.write(image_data)
-
-        size_kb = len(image_data) / 1024
-        click.echo(f"✓ Saved: {output} ({size_kb:.1f} KB)")
+        # Save to file only if output is specified
+        if output:
+            with open(output, 'wb') as f:
+                f.write(image_data)
+            size_kb = len(image_data) / 1024
+            click.echo(f"\n✓ Saved: {output} ({size_kb:.1f} KB)")
 
     except ValueError as e:
         click.echo(f"Error: {e}", err=True)
@@ -333,7 +351,7 @@ def tile(query, output, zoom, debug):
 
 @cli.command()
 @click.argument('query', nargs=-1, required=True)
-@click.option('--output', '-o', help='Output filename')
+@click.option('--output', '-o', help='Output filename (if not specified, only displays without saving)')
 @click.option('--debug', '-d', is_flag=True, help='Show resolved URL without fetching')
 def legend(query, output, debug):
     """Fetch legend graphic for a layer.
@@ -377,16 +395,26 @@ def legend(query, output, debug):
             style=resolved.style
         )
 
-        # Generate filename
-        if not output:
-            output = f"{resolved.layer.name}_legend.png"
+        # Display in terminal by default
+        click.echo("\nDisplaying image:")
+        try:
+            import tempfile
+            import os
+            # Save to temp file for display
+            with tempfile.NamedTemporaryFile(mode='wb', suffix='.png', delete=False) as tmp:
+                tmp.write(image_data)
+                tmp_path = tmp.name
+            display_image(tmp_path)
+            os.unlink(tmp_path)
+        except Exception as e:
+            click.echo(f"Warning: Could not display image: {e}", err=True)
 
-        # Save to file
-        with open(output, 'wb') as f:
-            f.write(image_data)
-
-        size_kb = len(image_data) / 1024
-        click.echo(f"✓ Saved: {output} ({size_kb:.1f} KB)")
+        # Save to file only if output is specified
+        if output:
+            with open(output, 'wb') as f:
+                f.write(image_data)
+            size_kb = len(image_data) / 1024
+            click.echo(f"\n✓ Saved: {output} ({size_kb:.1f} KB)")
 
     except ValueError as e:
         click.echo(f"Error: {e}", err=True)

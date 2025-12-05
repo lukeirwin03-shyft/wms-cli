@@ -2,10 +2,18 @@
 """
 Configuration management for WMS CLI.
 Handles init, loading/saving config, and capabilities caching.
+
+Cache Strategy:
+- Capabilities are cached in ~/.wms/capabilities_cache.xml
+- Uses sliding window TTL: cache resets on each access
+- Default TTL is 10 minutes (600 seconds)
+- If you're actively using the tool, cache stays fresh
+- If you return after being away, cache expires and refreshes
 """
 
 import json
 import os
+import time
 from pathlib import Path
 from dataclasses import dataclass, asdict
 from typing import Optional
@@ -17,6 +25,9 @@ logger = logging.getLogger(__name__)
 CONFIG_DIR = Path.home() / ".wms"
 CONFIG_FILE = CONFIG_DIR / "config.json"
 CAPS_CACHE_FILE = CONFIG_DIR / "capabilities_cache.xml"
+
+# Default cache TTL in seconds (10 minutes)
+DEFAULT_CACHE_TTL = 600
 
 
 @dataclass
@@ -37,6 +48,85 @@ class WMSConfig:
 def ensure_config_dir():
     """Create config directory if it doesn't exist"""
     CONFIG_DIR.mkdir(parents=True, exist_ok=True)
+
+
+def is_cache_valid(cache_path: Path, ttl_seconds: int) -> bool:
+    """
+    Check if cache file exists and is within TTL.
+
+    Args:
+        cache_path: Path to cache file
+        ttl_seconds: Maximum age in seconds
+
+    Returns:
+        True if cache exists and is not expired
+    """
+    if not cache_path.exists():
+        return False
+
+    try:
+        mtime = cache_path.stat().st_mtime
+        age = time.time() - mtime
+        return age < ttl_seconds
+    except OSError:
+        return False
+
+
+def touch_cache(cache_path: Path) -> None:
+    """
+    Touch cache file to reset its modification time (sliding window).
+
+    Args:
+        cache_path: Path to cache file
+    """
+    try:
+        cache_path.touch()
+        logger.debug(f"Cache touched: {cache_path}")
+    except OSError as e:
+        logger.warning(f"Failed to touch cache: {e}")
+
+
+def clear_cache() -> bool:
+    """
+    Clear the capabilities cache.
+
+    Returns:
+        True if cache was cleared, False if it didn't exist
+    """
+    if CAPS_CACHE_FILE.exists():
+        CAPS_CACHE_FILE.unlink()
+        logger.info("Capabilities cache cleared")
+        return True
+    return False
+
+
+def fetch_capabilities_xml(server_url: str, timeout: int = 30) -> str:
+    """
+    Fetch raw GetCapabilities XML from a WMS server.
+
+    Args:
+        server_url: WMS server base URL
+        timeout: Request timeout in seconds
+
+    Returns:
+        Raw XML content as string
+
+    Raises:
+        requests.RequestException: On network error
+    """
+    import requests
+
+    params = {
+        'SERVICE': 'WMS',
+        'VERSION': '1.3.0',
+        'REQUEST': 'GetCapabilities'
+    }
+
+    logger.info(f"Fetching capabilities from {server_url}")
+    response = requests.get(server_url, params=params, timeout=timeout)
+    response.raise_for_status()
+
+    return response.text
 
 
 def load_config() -> WMSConfig:
@@ -78,7 +168,12 @@ def get_capabilities_xml(config: WMSConfig) -> str:
     Get capabilities XML content based on config.
 
     For local files, reads directly.
-    For servers, uses cached version or fetches fresh.
+    For servers, uses cached version with sliding window TTL.
+
+    Cache behavior:
+    - Cache is valid for config.cache_ttl seconds (default 10 min)
+    - Each access "touches" the cache, resetting the TTL
+    - If cache expires, fresh data is fetched from server
 
     Args:
         config: WMSConfig with source information
@@ -103,34 +198,28 @@ def get_capabilities_xml(config: WMSConfig) -> str:
             return f.read()
 
     elif config.source_type == "server":
-        # Check cache first
-        if CAPS_CACHE_FILE.exists():
-            # TODO: Check cache TTL
+        ttl = config.cache_ttl if config.cache_ttl > 0 else DEFAULT_CACHE_TTL
+
+        # Check if cache is valid (exists and not expired)
+        if is_cache_valid(CAPS_CACHE_FILE, ttl):
+            logger.debug(f"Using cached capabilities (TTL: {ttl}s)")
             with open(CAPS_CACHE_FILE, 'r', encoding='utf-8') as f:
-                return f.read()
+                content = f.read()
+            # Touch cache to reset sliding window TTL
+            touch_cache(CAPS_CACHE_FILE)
+            return content
 
-        # Fetch from server
-        from .wms_client import WMSClient
+        # Cache expired or doesn't exist - fetch fresh
+        logger.info("Cache expired or missing, fetching fresh capabilities...")
+        xml_content = fetch_capabilities_xml(config.source_path)
 
-        client = WMSClient(config.source_path)
-        caps = client.get_capabilities()
-
-        # We need the raw XML, so fetch again
-        import requests
-        params = {
-            'SERVICE': 'WMS',
-            'VERSION': '1.3.0',
-            'REQUEST': 'GetCapabilities'
-        }
-        response = requests.get(config.source_path, params=params)
-        response.raise_for_status()
-
-        # Cache it
+        # Save to cache
         ensure_config_dir()
         with open(CAPS_CACHE_FILE, 'w', encoding='utf-8') as f:
-            f.write(response.text)
+            f.write(xml_content)
+        logger.debug(f"Cached capabilities to {CAPS_CACHE_FILE}")
 
-        return response.text
+        return xml_content
 
     else:
         raise ValueError(f"Unknown source type: {config.source_type}")
@@ -184,26 +273,24 @@ def init_from_server(server_url: str) -> WMSConfig:
 
     Returns:
         Initialized WMSConfig
+
+    Raises:
+        requests.RequestException: On network error
+        ValueError: If capabilities cannot be parsed
     """
-    from .wms_client import WMSClient
+    from .wms_parser import parse_capabilities
 
-    # Fetch capabilities to validate
-    client = WMSClient(server_url)
-    caps = client.get_capabilities()
+    # Fetch raw XML (single request)
+    xml_content = fetch_capabilities_xml(server_url)
 
-    # Fetch raw XML and cache it
-    import requests
-    params = {
-        'SERVICE': 'WMS',
-        'VERSION': '1.3.0',
-        'REQUEST': 'GetCapabilities'
-    }
-    response = requests.get(server_url, params=params)
-    response.raise_for_status()
+    # Parse to validate it's valid capabilities XML
+    caps = parse_capabilities(xml_content)
+    logger.info(f"Validated capabilities: {caps.service_title} ({len(caps.get_queryable_layers())} layers)")
 
+    # Cache the XML
     ensure_config_dir()
     with open(CAPS_CACHE_FILE, 'w', encoding='utf-8') as f:
-        f.write(response.text)
+        f.write(xml_content)
 
     config = WMSConfig(
         source_type="server",

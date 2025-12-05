@@ -23,9 +23,10 @@ from .fuzzy import (
     LayerIndex
 )
 
-from .resolver import (
-    QueryResolver,
-    ResolvedQuery
+from .smart_resolver import (
+    SmartQueryResolver,
+    ResolvedQuery,
+    AmbiguousQueryError
 )
 
 from .config import (
@@ -53,8 +54,9 @@ __all__ = [
     'SearchResult',
     'LayerIndex',
     # Resolver
-    'QueryResolver',
+    'SmartQueryResolver',
     'ResolvedQuery',
+    'AmbiguousQueryError',
     # Config
     'load_config',
     'save_config',

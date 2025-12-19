@@ -3,12 +3,10 @@ Terminal image display utilities.
 Supports multiple terminal protocols for displaying PNG images.
 """
 
-import sys
 import os
 from pathlib import Path
 from typing import Optional, Union
 from PIL import Image
-import base64
 
 
 

@@ -291,16 +291,20 @@ def map(query, output, display, width, height, bbox, crs, img_format, style, deb
 @click.option('--output', '-o', help='Output filename')
 @click.option('--display', '-D', is_flag=True, help='Display image in terminal using Unicode')
 @click.option('--zoom', '-z', default=3, help='Tile zoom level')
+@click.option('--row', '-r', type=int, help='Tile row (0 to 2^zoom - 1)')
+@click.option('--col', '-c', type=int, help='Tile column (0 to 2^zoom - 1)')
 @click.option('--debug', '-d', is_flag=True, help='Show resolved URL without fetching')
-def tile(query, output, display, zoom, debug):
-    """Fetch a random tile (GetGTile).
+def tile(query, output, display, zoom, row, col, debug):
+    """Fetch a tile (GetGTile).
 
     QUERY is fuzzy-matched to find the best layer.
+    If --row and --col are not specified, random coordinates are used.
 
     Examples:
         wms tile galwem cloud
-        wms tile gfs temp
-        wms tile hrrr --zoom 5
+        wms tile gfs temp --zoom 5
+        wms tile gfs temp --zoom 5 --row 10 --col 15
+        wms tile hrrr -z 3 -r 2 -c 4
         wms tile gfs temp --debug
     """
     resolver, config = get_resolver()
@@ -310,10 +314,25 @@ def tile(query, output, display, zoom, debug):
         # Resolve the query
         resolved = resolver.resolve(query_str)
 
-        # Generate random tile coordinates for the zoom level
+        # Use provided tile coordinates or generate random ones
         max_tiles = 2 ** zoom
-        tilerow = random.randint(0, max_tiles - 1)
-        tilecol = random.randint(0, max_tiles - 1)
+        if row is not None and col is not None:
+            # Validate coordinates
+            if not (0 <= row < max_tiles):
+                click.echo(f"Error: row must be between 0 and {max_tiles - 1} for zoom level {zoom}", err=True)
+                sys.exit(1)
+            if not (0 <= col < max_tiles):
+                click.echo(f"Error: col must be between 0 and {max_tiles - 1} for zoom level {zoom}", err=True)
+                sys.exit(1)
+            tilerow = row
+            tilecol = col
+        elif row is not None or col is not None:
+            click.echo("Error: --row and --col must be specified together", err=True)
+            sys.exit(1)
+        else:
+            # Generate random coordinates
+            tilerow = random.randint(0, max_tiles - 1)
+            tilecol = random.randint(0, max_tiles - 1)
 
         # Show what we resolved to
         click.echo(f"→ Resolved: {resolved.layer.name}")
@@ -593,18 +612,31 @@ def layers(query, limit, show_all, verbose, as_json, count):
 
 @cli.command()
 @click.argument('query', nargs=-1, required=True, shell_complete=complete_layer_names)
-@click.option('--workers', '-w', default=20, help='Number of parallel workers')
-@click.option('--dry-run', is_flag=True, help='Show requests without executing')
-@click.option('--output', '-o', default='wms_output', help='Output directory')
-def hammer(query, workers, dry_run, output):
-    """Hammer all layers matching query.
+@click.option('--workers', '-w', default=20, help='Number of concurrent workers (default: 20)')
+@click.option('--dry-run', is_flag=True, help='Preview requests without executing')
+@click.option('--output', '-o', default=None, help='Save images to this directory (omit for metrics only)')
+@click.option('--report', '-r', help='Save JSON performance report to file')
+def hammer(query, workers, dry_run, output, report):
+    """Performance test WMS server with concurrent requests.
 
-    Generates all dimension combinations and fetches them in parallel.
+    Sends parallel GetMap requests for all matching layers and their dimension
+    combinations. Tracks response times, throughput, success rates, and
+    percentile latencies (p50/p95/p99).
+
+    By default, responses are read into memory for metrics but not saved.
+    Use -o to save images to disk.
 
     Examples:
-        wms hammer gfs
-        wms hammer galwem cloud
-        wms hammer hrrr --workers 10
+
+        wms hammer gfs                    # Test all GFS layers
+
+        wms hammer galwem cloud           # Test matching layers
+
+        wms hammer hrrr -w 50             # 50 concurrent workers
+
+        wms hammer gfs -o ./images        # Save images to disk
+
+        wms hammer gfs -r report.json     # Save JSON report
     """
     resolver, config = get_resolver()
     query_str = ' '.join(query)
@@ -649,10 +681,10 @@ def hammer(query, workers, dry_run, output):
             dry_run=dry_run,
             verbose=False,
             random_tiles=False,
-            no_save=False,
             single_forecast=False,
             num_random_tiles=100,
-            timeout=30
+            timeout=30,
+            report=report
         )
 
         # Get capabilities
@@ -955,8 +987,10 @@ def build_layer_tree(capabilities):
     """Build a tree structure of layer groups."""
     tree = {}
 
-    def add_to_tree(layer, path=[]):
+    def add_to_tree(layer, path=None):
         """Recursively add layers to tree."""
+        if path is None:
+            path = []
         if layer.name:
             # This is a queryable layer, add it under current path
             current = tree

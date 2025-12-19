@@ -11,7 +11,6 @@ from textual.binding import Binding
 from textual import on, events
 from rich.text import Text
 from rich.table import Table
-from rich.panel import Panel
 from pathlib import Path
 import sys
 from typing import List, Optional

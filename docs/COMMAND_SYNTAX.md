@@ -14,7 +14,8 @@
 | `wms tile` | ✅ **Working** | Random tile generation |
 | `wms legend` | ✅ **Working** | Basic implementation |
 | `wms layers` | ✅ **Complete** | Search/list with `--verbose`, `--json`, `--count`, `--all` options |
-| `wms hammer` | ✅ **Working** | Batch requests with workers |
+| `wms hammer` | ✅ **Complete** | Performance testing with profiles, metrics |
+| `wms profiles` | ✅ **Complete** | Hammer profile management |
 | `wms status` | ✅ **Working** | Shows config |
 | `wms batch` | ✅ **Complete** | Fetch all layers matching pattern, `--dry-run`, `--list` |
 | `wms groups` | ✅ **Complete** | List layer groups/hierarchy, `--tree`, `--counts` |
@@ -28,7 +29,7 @@
 | Command | Optional Features |
 |---------|-------------------|
 | `wms tile` | `--row`, `--col` for specific tile coords |
-| `wms hammer` | `--all-forecasts`, `--timeout` options |
+| `wms hammer` | `--all-forecasts` option |
 | `wms layers` | `--model` filter option |
 
 ---
@@ -59,7 +60,6 @@ All core commands have been implemented. Remaining work is optional enhancements
 
 3. **`wms hammer` enhancements**
    - Add `--all-forecasts` to iterate forecast times
-   - Add `--timeout` option
 
 4. **`wms layers --model` filter**
    - Filter layers by model name prefix
@@ -485,69 +485,117 @@ Queryable: Yes
 
 ### `wms hammer` - Performance Testing
 
-Hammer a WMS server with many requests for performance testing.
+Stress test WMS servers with parallel GetMap requests and track performance metrics.
 
 ```bash
 wms hammer <query> [options]
 ```
 
+**Using Profiles (Recommended):**
 ```bash
-# Basic hammering
-wms hammer galwem cloud
+# Built-in profiles for different scenarios
+wms hammer gfs -p gentle        # 5 workers, small images
+wms hammer gfs -p balanced      # 10 workers, medium images
+wms hammer gfs -p aggressive    # 50 workers, large images
+wms hammer gfs -p stress        # 100 workers - stress testing only
 
-# High concurrency
-wms hammer gfs --workers 50
+# Create custom profile
+wms hammer gfs -w 8 --size small --save-profile myserver
 
-# Random tile hammering
-wms hammer galwem --random-tiles --tile-count 1000 --zoom 5
+# Use custom profile
+wms hammer gfs -p myserver
+```
 
-# All forecasts for matching layers
-wms hammer "GALWEM_Cloud*" --all-forecasts
+**Custom Settings:**
+```bash
+# Adjust workers and image size
+wms hammer gfs -w 5 --size small
 
-# Dry run to see what would be requested
+# With timeout and retries
+wms hammer galwem cloud -w 10 -t 15 --retries 2
+
+# Save images to directory
+wms hammer gfs temp -o ./output/
+
+# Dry run (preview without executing)
 wms hammer gfs temp --dry-run
+
+# Save JSON performance report
+wms hammer gfs -p balanced -r performance.json
 ```
 
 **Options:**
 | Option | Description |
 |--------|-------------|
-| `--workers, -w <int>` | Concurrent workers (default: 20) |
-| `--output, -o <dir>` | Output directory |
-| `--no-save` | Don't save images (just fetch) |
+| `-p, --profile <name>` | Use a saved profile (gentle, balanced, aggressive, stress) |
+| `--save-profile <name>` | Save current settings as a new profile |
+| `-w, --workers <int>` | Concurrent workers (default: 20) |
+| `--size <size>` | Image size: small (256x256), medium (512x512), large (800x600) |
+| `-t, --timeout <int>` | Request timeout in seconds (default: 30) |
+| `--retries <int>` | Number of times to retry failed requests (default: 0) |
+| `-o, --output <dir>` | Save images to directory (by default images are not saved) |
+| `-r, --report <file>` | Save JSON performance report |
 | `--dry-run` | Show requests without executing |
-| `--random-tiles` | Generate random tile requests |
-| `--tile-zoom <int>` | Zoom level for random tiles |
-| `--tile-count <int>` | Number of random tiles per layer |
-| `--all-forecasts` | Request all forecast times |
-| `--latest-run` | Only use latest model run |
-| `--max-timesteps <int>` | Limit forecast timesteps |
-| `--timeout <int>` | Request timeout in seconds |
-| `--verbose, -v` | Verbose output |
+
+**Metrics Tracked:**
+- Response time: avg, min, max, p50, p95, p99
+- Throughput: requests/sec, bytes/sec
+- Success/failure rates
+- Data transferred per request
 
 **Output:**
 ```
-🔨 WMS Hammer starting...
-   URL: http://localhost:8006/ogc/AFW_WMS
-   Mode: GetMap
-   Workers: 20
+WMS Hammer - Performance Testing
+════════════════════════════════════════════
+URL: https://ogc.shyftwx.com/ogc/WMS
+Layers: 5 matching 'gfs'
+Workers: 10 | Timeout: 20s | Image: 512x512
 
-📡 Found 24 layers matching 'galwem cloud'
-📊 Total requests to make: 2,352
+Progress: 50/50 [████████████████████] 100%
 
-🚀 Executing requests...
-   [████████████████████████████████] 100% (2352/2352)
+Results:
+  Total: 50 | Success: 48 (96%) | Failed: 2 (4%)
+  Time: 12.5s | Throughput: 4.0 req/s
+  Data: 15.2 MB | Avg size: 316 KB
 
-═══════════════════════════════════════════
-📊 SUMMARY
-═══════════════════════════════════════════
-Total requests:     2,352
-Successful:         2,350 (99.9%)
-Failed:             2 (0.1%)
-Time elapsed:       45.2s
-Requests/sec:       52.0
-Total size:         156.2 MB
-═══════════════════════════════════════════
+Response Times:
+  Avg: 245ms | Min: 89ms | Max: 1.2s
+  p50: 210ms | p95: 450ms | p99: 890ms
+════════════════════════════════════════════
 ```
+
+---
+
+### `wms profiles` - Manage Hammer Profiles
+
+Manage saved profiles for the hammer command.
+
+```bash
+# List all profiles
+wms profiles list
+
+# Show profile details
+wms profiles show balanced
+wms profiles show myserver
+
+# Delete a custom profile
+wms profiles delete myserver
+```
+
+**Built-in Profiles:**
+| Profile | Workers | Size | Timeout | Description |
+|---------|---------|------|---------|-------------|
+| gentle | 5 | small | 30s | Low concurrency - for slow servers |
+| balanced | 10 | medium | 20s | Moderate load - most servers |
+| aggressive | 50 | large | 30s | High concurrency - robust servers |
+| stress | 100 | large | 60s | Maximum load - stress testing only |
+
+**Subcommands:**
+| Command | Description |
+|---------|-------------|
+| `list` | List all available profiles |
+| `show <name>` | Show details of a specific profile |
+| `delete <name>` | Delete a custom profile (built-ins cannot be deleted) |
 
 ---
 
@@ -725,8 +773,13 @@ wms groups --tree
 wms describe galwem cloud base
 
 # Performance testing
-wms hammer galwem -w 50
-wms hammer gfs --random-tiles --tile-count 500
+wms hammer galwem -p balanced
+wms hammer gfs -w 20 --size small
+wms hammer gfs --save-profile myprofile
+
+# Hammer profiles
+wms profiles list
+wms profiles show balanced
 
 # Utilities
 wms url map gfs temp 6h

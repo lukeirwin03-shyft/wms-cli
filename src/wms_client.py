@@ -5,6 +5,8 @@ Handles HTTP requests to WMS servers for GetCapabilities, GetMap, GetGTile, etc.
 """
 
 import requests
+from requests.adapters import HTTPAdapter
+from urllib3.util.retry import Retry
 import logging
 from typing import Optional, Dict, Any
 from .wms_parser import parse_capabilities, WMSCapabilities
@@ -15,18 +17,40 @@ logger = logging.getLogger(__name__)
 class WMSClient:
     """HTTP client for WMS operations"""
 
-    def __init__(self, base_url: str, timeout: int = 30):
+    def __init__(self, base_url: str, timeout: int = 30, max_connections: int = 20, retries: int = 0):
         """
         Initialize WMS client.
 
         Args:
             base_url: Base URL for WMS service (e.g., "http://localhost:8008/ogc/AFW_WMS")
             timeout: Request timeout in seconds
+            max_connections: Maximum connections in pool (should match worker count)
+            retries: Number of retries for failed requests (0 = no retries)
         """
         self.base_url = base_url.rstrip('?')
         self.timeout = timeout
         self.session = requests.Session()
-        self.session.headers.update({'User-Agent': 'wms-hammer/1.0'})
+        self.session.headers.update({
+            'User-Agent': 'wms-cli/1.0',
+            'Connection': 'keep-alive',
+            'Accept-Encoding': 'gzip, deflate',
+        })
+
+        # Configure connection pooling and retries
+        retry_strategy = Retry(
+            total=retries,
+            backoff_factor=0.5,
+            status_forcelist=[500, 502, 503, 504],
+        ) if retries > 0 else Retry(total=0)
+
+        adapter = HTTPAdapter(
+            pool_connections=max_connections,
+            pool_maxsize=max_connections,
+            max_retries=retry_strategy,
+            pool_block=False,  # Don't block when pool is full
+        )
+        self.session.mount('http://', adapter)
+        self.session.mount('https://', adapter)
 
     def get_capabilities(self, version: str = "1.3.0") -> WMSCapabilities:
         """

@@ -75,7 +75,8 @@ wms tile gfs temp -z 5       # Get tile
 # Batch operations
 wms batch gfs temp --list    # List matches
 wms batch gfs temp -o ./out/ # Download all
-wms hammer gfs --workers 20  # Performance test
+wms hammer gfs -p balanced   # Performance test with profile
+wms profiles list            # List hammer profiles
 
 # Cache management
 wms cache status             # Check cache
@@ -132,6 +133,7 @@ Result: Resolved layer with valid dimensions
 Config stored in `~/.wms/`:
 - `config.json` - Source URL, output directory, settings
 - `capabilities_cache.xml` - Cached GetCapabilities (10-min sliding TTL)
+- `profiles.json` - Custom hammer profiles
 
 ## WMS Concepts
 
@@ -202,6 +204,7 @@ All core commands are implemented and working:
 | `wms groups` | ✅ Complete |
 | `wms batch` | ✅ Complete |
 | `wms hammer` | ✅ Complete |
+| `wms profiles` | ✅ Complete |
 | `wms url` | ✅ Complete |
 | `wms cache` | ✅ Complete |
 | `wms status` | ✅ Complete |

@@ -15,7 +15,9 @@ from .config import (
     load_config, save_config, get_capabilities_xml,
     init_from_file, init_from_server, WMSConfig,
     clear_cache, is_cache_valid, CAPS_CACHE_FILE, DEFAULT_CACHE_TTL,
-    fetch_capabilities_xml, ensure_config_dir
+    fetch_capabilities_xml, ensure_config_dir,
+    HammerProfile, load_profiles, save_profile, get_profile, delete_profile,
+    BUILTIN_PROFILES
 )
 from .wms_parser import parse_capabilities, Layer
 from .wms_client import WMSClient
@@ -612,11 +614,17 @@ def layers(query, limit, show_all, verbose, as_json, count):
 
 @cli.command()
 @click.argument('query', nargs=-1, required=True, shell_complete=complete_layer_names)
-@click.option('--workers', '-w', default=20, help='Number of concurrent workers (default: 20)')
+@click.option('--profile', '-p', help='Use a saved profile (gentle, balanced, aggressive, stress, or custom)')
+@click.option('--save-profile', 'save_profile_name', help='Save current settings as a named profile')
+@click.option('--workers', '-w', default=None, type=int, help='Number of concurrent workers')
 @click.option('--dry-run', is_flag=True, help='Preview requests without executing')
 @click.option('--output', '-o', default=None, help='Save images to this directory (omit for metrics only)')
 @click.option('--report', '-r', help='Save JSON performance report to file')
-def hammer(query, workers, dry_run, output, report):
+@click.option('--timeout', '-t', default=None, type=int, help='Request timeout in seconds')
+@click.option('--retries', default=None, type=int, help='Retry failed requests N times')
+@click.option('--size', type=click.Choice(['small', 'medium', 'large']), default=None,
+              help='Image size: small=256x256, medium=512x512, large=800x600')
+def hammer(query, profile, save_profile_name, workers, dry_run, output, report, timeout, retries, size):
     """Performance test WMS server with concurrent requests.
 
     Sends parallel GetMap requests for all matching layers and their dimension
@@ -626,18 +634,53 @@ def hammer(query, workers, dry_run, output, report):
     By default, responses are read into memory for metrics but not saved.
     Use -o to save images to disk.
 
+    Built-in profiles: gentle, balanced, aggressive, stress
+
     Examples:
 
-        wms hammer gfs                    # Test all GFS layers
+        wms hammer gfs                    # Test with defaults
 
-        wms hammer galwem cloud           # Test matching layers
+        wms hammer gfs -p gentle          # Use gentle profile (5 workers, small images)
 
-        wms hammer hrrr -w 50             # 50 concurrent workers
+        wms hammer gfs -p balanced        # Use balanced profile (10 workers)
 
-        wms hammer gfs -o ./images        # Save images to disk
+        wms hammer gfs --size small -w 5  # Custom settings
 
-        wms hammer gfs -r report.json     # Save JSON report
+        wms hammer gfs -w 5 --save-profile myprofile   # Save as custom profile
     """
+    # Load profile if specified
+    if profile:
+        prof = get_profile(profile)
+        if not prof:
+            available = ', '.join(load_profiles().keys())
+            click.echo(f"Unknown profile: {profile}", err=True)
+            click.echo(f"Available profiles: {available}", err=True)
+            sys.exit(1)
+        # Use profile defaults, allow overrides
+        workers = workers if workers is not None else prof.workers
+        timeout = timeout if timeout is not None else prof.timeout
+        retries = retries if retries is not None else prof.retries
+        size = size if size is not None else prof.size
+        click.echo(f"→ Using profile '{profile}': {prof.description}")
+    else:
+        # Apply defaults if not specified
+        workers = workers if workers is not None else 20
+        timeout = timeout if timeout is not None else 30
+        retries = retries if retries is not None else 0
+        size = size if size is not None else 'medium'
+
+    # Save profile if requested
+    if save_profile_name:
+        new_profile = HammerProfile(
+            name=save_profile_name,
+            workers=workers,
+            timeout=timeout,
+            retries=retries,
+            size=size,
+            description=f"Custom profile: {workers} workers, {size} images, {timeout}s timeout"
+        )
+        save_profile(new_profile)
+        click.echo(f"✓ Saved profile '{save_profile_name}'")
     resolver, config = get_resolver()
     query_str = ' '.join(query)
 
@@ -667,6 +710,14 @@ def hammer(query, workers, dry_run, output, report):
         from .hammer import WMSHammer
         import argparse
 
+        # Map size to dimensions
+        size_map = {
+            'small': (256, 256),
+            'medium': (512, 512),
+            'large': (800, 600),
+        }
+        width, height = size_map[size]
+
         # Build args for hammer
         args = argparse.Namespace(
             url=config.server_url,
@@ -683,7 +734,10 @@ def hammer(query, workers, dry_run, output, report):
             random_tiles=False,
             single_forecast=False,
             num_random_tiles=100,
-            timeout=30,
+            timeout=timeout,
+            retries=retries,
+            width=width,
+            height=height,
             report=report
         )
 
@@ -787,6 +841,76 @@ def cache_refresh():
         click.echo(f"✓ Cache refreshed ({len(caps.get_queryable_layers())} layers)")
     except Exception as e:
         click.echo(f"Error: {e}", err=True)
+        sys.exit(1)
+
+
+# =============================================================================
+# Profile Management Commands
+# =============================================================================
+
+@cli.group()
+def profiles():
+    """Manage hammer performance profiles."""
+    pass
+
+
+@profiles.command('list')
+def profiles_list():
+    """List all available profiles."""
+    all_profiles = load_profiles()
+
+    click.echo("Available profiles:\n")
+
+    # Show built-in profiles first
+    click.echo("Built-in:")
+    for name in sorted(BUILTIN_PROFILES.keys()):
+        prof = all_profiles[name]
+        click.echo(f"  {name:12} - {prof.description}")
+        click.echo(f"               workers={prof.workers}, size={prof.size}, timeout={prof.timeout}s, retries={prof.retries}")
+
+    # Show custom profiles
+    custom = {k: v for k, v in all_profiles.items() if k not in BUILTIN_PROFILES}
+    if custom:
+        click.echo("\nCustom:")
+        for name in sorted(custom.keys()):
+            prof = custom[name]
+            click.echo(f"  {name:12} - {prof.description}")
+            click.echo(f"               workers={prof.workers}, size={prof.size}, timeout={prof.timeout}s, retries={prof.retries}")
+
+    click.echo("\nUsage: wms hammer <query> -p <profile>")
+
+
+@profiles.command('show')
+@click.argument('name')
+def profiles_show(name):
+    """Show details of a specific profile."""
+    prof = get_profile(name)
+    if not prof:
+        click.echo(f"Profile not found: {name}", err=True)
+        sys.exit(1)
+
+    is_builtin = name in BUILTIN_PROFILES
+    click.echo(f"Profile: {name} {'(built-in)' if is_builtin else '(custom)'}")
+    click.echo(f"Description: {prof.description}")
+    click.echo(f"\nSettings:")
+    click.echo(f"  workers:  {prof.workers}")
+    click.echo(f"  size:     {prof.size}")
+    click.echo(f"  timeout:  {prof.timeout}s")
+    click.echo(f"  retries:  {prof.retries}")
+
+
+@profiles.command('delete')
+@click.argument('name')
+def profiles_delete(name):
+    """Delete a custom profile."""
+    if name in BUILTIN_PROFILES:
+        click.echo(f"Cannot delete built-in profile: {name}", err=True)
+        sys.exit(1)
+
+    if delete_profile(name):
+        click.echo(f"✓ Deleted profile: {name}")
+    else:
+        click.echo(f"Profile not found: {name}", err=True)
         sys.exit(1)
 
 

@@ -11,7 +11,7 @@ A command-line tool for making WMS (Web Map Service) requests with fuzzy search 
 - **Terminal image display** - View images directly in terminal with `--display` flag
 - **Cache management** - 10-minute sliding TTL cache for capabilities
 - **Batch downloads** - Download multiple layers matching a pattern
-- **Performance testing** - Hammer WMS servers with concurrent requests
+- **Performance testing** - Hammer WMS servers with profiles, metrics, and configurable options
 - **Interactive TUI** - Terminal UI with autocomplete
 
 ## Installation
@@ -84,7 +84,8 @@ wms
 | `wms describe <query>` | Show layer details |
 | `wms groups` | List layer groups |
 | `wms batch <query>` | Download all matching layers |
-| `wms hammer <query>` | Performance testing |
+| `wms hammer <query>` | Performance testing with profiles |
+| `wms profiles list` | Manage hammer profiles |
 | `wms url <type> <query>` | Build URL without fetching |
 | `wms cache status` | Show cache status |
 | `wms cache clear` | Clear capabilities cache |

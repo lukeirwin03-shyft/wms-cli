@@ -25,9 +25,134 @@ logger = logging.getLogger(__name__)
 CONFIG_DIR = Path.home() / ".wms"
 CONFIG_FILE = CONFIG_DIR / "config.json"
 CAPS_CACHE_FILE = CONFIG_DIR / "capabilities_cache.xml"
+PROFILES_FILE = CONFIG_DIR / "profiles.json"
 
 # Default cache TTL in seconds (10 minutes)
 DEFAULT_CACHE_TTL = 600
+
+
+@dataclass
+class HammerProfile:
+    """Hammer performance test profile"""
+    name: str
+    workers: int = 20
+    timeout: int = 30
+    retries: int = 0
+    size: str = "medium"  # small, medium, large
+    description: str = ""
+
+    def to_dict(self) -> dict:
+        return asdict(self)
+
+    @classmethod
+    def from_dict(cls, data: dict) -> 'HammerProfile':
+        return cls(**data)
+
+
+# Built-in profiles
+BUILTIN_PROFILES = {
+    "gentle": HammerProfile(
+        name="gentle",
+        workers=5,
+        timeout=30,
+        retries=1,
+        size="small",
+        description="Low concurrency, small images - for slow/limited servers"
+    ),
+    "balanced": HammerProfile(
+        name="balanced",
+        workers=10,
+        timeout=20,
+        retries=1,
+        size="medium",
+        description="Moderate load - good for most servers"
+    ),
+    "aggressive": HammerProfile(
+        name="aggressive",
+        workers=50,
+        timeout=30,
+        retries=0,
+        size="large",
+        description="High concurrency - for robust servers"
+    ),
+    "stress": HammerProfile(
+        name="stress",
+        workers=100,
+        timeout=60,
+        retries=0,
+        size="large",
+        description="Maximum load - stress testing only"
+    ),
+}
+
+
+def load_profiles() -> dict:
+    """Load custom profiles from disk."""
+    profiles = dict(BUILTIN_PROFILES)  # Start with built-ins
+
+    if PROFILES_FILE.exists():
+        try:
+            with open(PROFILES_FILE, 'r') as f:
+                custom = json.load(f)
+            for name, data in custom.items():
+                profiles[name] = HammerProfile.from_dict(data)
+        except Exception as e:
+            logger.warning(f"Failed to load profiles: {e}")
+
+    return profiles
+
+
+def save_profile(profile: HammerProfile):
+    """Save a custom profile to disk."""
+    ensure_config_dir()
+
+    # Load existing custom profiles
+    custom = {}
+    if PROFILES_FILE.exists():
+        try:
+            with open(PROFILES_FILE, 'r') as f:
+                custom = json.load(f)
+        except Exception:
+            pass
+
+    # Add/update this profile
+    custom[profile.name] = profile.to_dict()
+
+    with open(PROFILES_FILE, 'w') as f:
+        json.dump(custom, f, indent=2)
+
+    logger.info(f"Profile '{profile.name}' saved to {PROFILES_FILE}")
+
+
+def delete_profile(name: str) -> bool:
+    """Delete a custom profile. Returns True if deleted."""
+    if name in BUILTIN_PROFILES:
+        return False  # Can't delete built-ins
+
+    if not PROFILES_FILE.exists():
+        return False
+
+    try:
+        with open(PROFILES_FILE, 'r') as f:
+            custom = json.load(f)
+
+        if name not in custom:
+            return False
+
+        del custom[name]
+
+        with open(PROFILES_FILE, 'w') as f:
+            json.dump(custom, f, indent=2)
+
+        return True
+    except Exception:
+        return False
+
+
+def get_profile(name: str) -> Optional[HammerProfile]:
+    """Get a profile by name."""
+    profiles = load_profiles()
+    return profiles.get(name)
 
 
 @dataclass

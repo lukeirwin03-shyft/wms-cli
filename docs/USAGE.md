@@ -531,17 +531,73 @@ wms url legend gfs temp
 
 ## Performance Testing
 
-The `hammer` command is for stress testing WMS servers:
+The `hammer` command is for stress testing WMS servers. It sends parallel GetMap requests and tracks performance metrics including response times, throughput, and percentile latencies.
+
+### Using Profiles
+
+Built-in profiles make it easy to configure hammer for different scenarios:
 
 ```bash
-# Hammer all matching layers
-wms hammer gfs temp
+# Use a built-in profile (recommended)
+wms hammer gfs -p gentle        # 5 workers, small images - for slow servers
+wms hammer gfs -p balanced      # 10 workers, medium images - most servers
+wms hammer gfs -p aggressive    # 50 workers, large images - robust servers
+wms hammer gfs -p stress        # 100 workers - stress testing only
 
-# High concurrency
-wms hammer gfs --workers 50
+# List all available profiles
+wms profiles list
 
-# Dry run to preview
-wms hammer gfs temp --dry-run
+# Show profile details
+wms profiles show gentle
+```
+
+### Custom Settings
+
+```bash
+# Custom worker count and image size
+wms hammer gfs -w 5 --size small
+
+# Set timeout and retries
+wms hammer gfs -w 10 -t 15 --retries 2
+
+# Save your settings as a custom profile
+wms hammer gfs -w 8 --size small -t 20 --save-profile myserver
+
+# Use your custom profile
+wms hammer gfs -p myserver
+```
+
+### Options
+
+| Option | Description |
+|--------|-------------|
+| `-p, --profile` | Use a saved profile (gentle, balanced, aggressive, stress) |
+| `-w, --workers` | Number of concurrent workers |
+| `--size` | Image size: small (256x256), medium (512x512), large (800x600) |
+| `-t, --timeout` | Request timeout in seconds |
+| `--retries` | Number of times to retry failed requests |
+| `-o, --output` | Save images to directory |
+| `-r, --report` | Save JSON performance report |
+| `--dry-run` | Preview requests without executing |
+
+### Performance Tips
+
+- **Connection failures?** Reduce workers: `-w 5`
+- **Slow transfers?** Use smaller images: `--size small`
+- **Long waits?** Reduce timeout: `-t 15`
+- **Transient errors?** Add retries: `--retries 2`
+
+### Metrics Tracked
+
+The hammer command tracks:
+- Response time (avg, p50, p95, p99, min, max)
+- Throughput (requests/sec, bytes/sec)
+- Success/failure rates
+- Data transferred per request
+
+```bash
+# Save a JSON report for analysis
+wms hammer gfs -p balanced -r performance.json
 ```
 
 ---

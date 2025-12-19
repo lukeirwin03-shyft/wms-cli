@@ -250,6 +250,10 @@ class WMSHammer:
         self.save_images = args.output is not None  # Save only if output dir specified
         self.report_file = getattr(args, 'report', None)
 
+        # Performance tuning
+        self.timeout = getattr(args, 'timeout', 30)
+        self.retries = getattr(args, 'retries', 0)
+
         # Tile options
         self.random_tiles = getattr(args, 'random_tiles', None)
         self.tile_zoom = getattr(args, 'tile_zoom', 0)
@@ -268,7 +272,8 @@ class WMSHammer:
 
     def run(self):
         """Main execution"""
-        # Setup phase (before dashboard)
+        # Clear screen and setup phase (before dashboard)
+        print('\033[2J\033[H', end='')  # Clear entire screen and move home
         print('\033[1;36mWMS Hammer - Performance Testing\033[0m')
         print(f'URL: {self.base_url}')
         print()
@@ -356,7 +361,7 @@ class WMSHammer:
             dashboard.stop()
 
         # Clear screen and show final report
-        print('\033[H\033[J', end='')
+        print('\033[2J\033[H', end='')  # Clear entire screen and move home
         self._show_report()
 
         # Save report if requested
@@ -471,7 +476,13 @@ class WMSHammer:
 
     def _execute_requests(self, requests: List[Dict[str, Any]]):
         """Execute requests with threading"""
-        with WMSClient(self.base_url) as client:
+        # Configure client with connection pool sized for our worker count
+        with WMSClient(
+            self.base_url,
+            timeout=self.timeout,
+            max_connections=self.max_workers + 5,  # A few extra for headroom
+            retries=self.retries,
+        ) as client:
             with ThreadPoolExecutor(max_workers=self.max_workers) as executor:
                 futures = {executor.submit(self._execute_single_request, client, req): req for req in requests}
 
@@ -704,9 +715,17 @@ def main():
 Examples:
   %(prog)s https://example.com/wms              # Test all layers (metrics only)
   %(prog)s https://example.com/wms -g "GFS*"    # Test layers matching pattern
-  %(prog)s https://example.com/wms -w 50        # Use 50 concurrent workers
+  %(prog)s https://example.com/wms -w 5         # Use 5 concurrent workers (gentler)
+  %(prog)s https://example.com/wms --timeout 15 # 15 second timeout
+  %(prog)s https://example.com/wms --retries 2  # Retry failed requests twice
   %(prog)s https://example.com/wms -o ./images  # Save images to disk
   %(prog)s https://example.com/wms -r report.json  # Save JSON report
+
+Performance tips:
+  - Use fewer workers (-w 5) if seeing connection failures
+  - Use smaller images (--width 256 --height 256) for faster transfers
+  - Use --timeout 15 to fail faster on slow requests
+  - Use --retries 2 to automatically retry transient failures
 
 Metrics tracked:
   - Response time (avg, p50, p95, p99, min, max)
@@ -721,8 +740,10 @@ Metrics tracked:
     parser.add_argument('-o', '--output', default=None, help='Save images to directory (omit for metrics only)')
     parser.add_argument('-w', '--workers', type=int, default=20, help='Number of concurrent workers (default: 20)')
     parser.add_argument('-t', '--max-timesteps', type=int, default=10, help='Max timesteps per layer (default: 10)')
-    parser.add_argument('--width', type=int, default=800, help='Image width in pixels (default: 800)')
-    parser.add_argument('--height', type=int, default=600, help='Image height in pixels (default: 600)')
+    parser.add_argument('--width', type=int, default=512, help='Image width in pixels (default: 512)')
+    parser.add_argument('--height', type=int, default=512, help='Image height in pixels (default: 512)')
+    parser.add_argument('--timeout', type=int, default=30, help='Request timeout in seconds (default: 30)')
+    parser.add_argument('--retries', type=int, default=0, help='Retry failed requests N times (default: 0)')
     parser.add_argument('--tile-mode', action='store_true', help='Use GetGTile instead of GetMap')
     parser.add_argument('--latest-run', dest='latest_run_only', action='store_true', help='Test only the latest model run')
     parser.add_argument('--dry-run', action='store_true', help='Preview requests without executing')
